@@ -21,6 +21,7 @@ const STRIPES = '▚▚▚▚▚▚▚▚▚▚▚▚▚▚▚▚▚▚▚▚▚
 const calls = atom({ plugin: 'neon-grid', key: 'calls' } as const, [], { shape: 'calls-1' })
 const last = atom({ plugin: 'neon-grid', key: 'last' } as const, null)
 const turns = atom({ plugin: 'neon-grid', key: 'turns' } as const, 0)
+const toolsTotal = atom({ plugin: 'neon-grid', key: 'toolsTotal' } as const, 0)
 const isBandHidden = atom({ plugin: 'neon-grid', key: 'isBandHidden' } as const, false)
 
 export const register: Register = on => {
@@ -52,14 +53,18 @@ export const register: Register = on => {
     tools += 1
     const call: Call = { id: e.tool_use_id, tool: e.tool, isDone: false }
     await update($, calls, list => [...list, call].slice(-100)).catch(() => {})
-    const ran = await next(e)
-    await update($, calls, list => list.map(one => (one.id === call.id ? { ...one, isDone: true } : one))).catch(() => {})
-
-    return ran
+    await update($, toolsTotal, n => n + 1).catch(() => {})
+    try {
+      return await next(e)
+    } finally {
+      await update($, calls, list => list.map(one => (one.id === call.id ? { ...one, isDone: true } : one))).catch(() => {})
+    }
   })
 
   on('turn.complete', async ($, e, next) => {
-    const seconds = Math.max(0, Math.round(((await $.clock.now()) - startedAt) / 1000))
+    // No real start or end time means no duration, not a huge one
+    const now = await $.clock.now().catch(() => 0)
+    const seconds = startedAt && now ? Math.max(0, Math.round((now - startedAt) / 1000)) : null
     const turn: Turn = { seconds, tools }
     await update($, last, () => turn)
     await update($, turns, n => n + 1)
@@ -72,6 +77,7 @@ export const register: Register = on => {
     const list = await read($, calls)
     const turn = await read($, last)
     const count = await read($, turns)
+    const total = await read($, toolsTotal)
     const running = list.filter(c => !c.isDone)
     const room = Math.max(3, (e.viewport?.rows ?? 30) - 16)
     const width = Math.max(10, (e.viewport?.columns ?? 40) - 2)
@@ -99,11 +105,11 @@ export const register: Register = on => {
           </Box>
           <Box flexDirection="column" flexGrow={1} backgroundColor={HIGH} padding="sm">
             <Text color={SUBTLE} size="caption" weight="bold">HERRAMIENTAS</Text>
-            <Text color={CYAN} size="title" weight="bold" tabular>{String(list.length)}</Text>
+            <Text color={CYAN} size="title" weight="bold" tabular>{String(total)}</Text>
           </Box>
           <Box flexDirection="column" flexGrow={1} backgroundColor={HIGH} padding="sm">
             <Text color={SUBTLE} size="caption" weight="bold">ÚLTIMO</Text>
-            <Text color={WHITE} size="title" weight="bold" tabular>{turn ? `${turn.seconds}s` : '--'}</Text>
+            <Text color={WHITE} size="title" weight="bold" tabular>{turn?.seconds != null ? `${turn.seconds}s` : '--'}</Text>
           </Box>
         </Box>
 
@@ -111,7 +117,7 @@ export const register: Register = on => {
           <Text color={MAGENTA} size="caption" weight="bold">REGISTRO</Text>
           {list.length === 0 && <Text color={MUTED}>Sin actividad todavía.</Text>}
           {list.slice(-room).reverse().map(call => (
-            <Box flexDirection="row" gap="sm">
+            <Box key={call.id} flexDirection="row" gap="sm">
               <Text color={call.isDone ? YELLOW_DIM : CYAN} mono>{call.isDone ? '[OK]' : '[>>]'}</Text>
               <Text color={call.isDone ? MUTED : WHITE} mono>{call.tool}</Text>
             </Box>
@@ -134,7 +140,7 @@ export const register: Register = on => {
       <Box flexDirection="row" alignItems="center" gap="sm" backgroundColor={BLACK} paddingX="sm" borderStyle="single" borderColor={YELLOW}>
         <Text color={YELLOW} weight="bold" mono>// CONEXIÓN ESTABLECIDA_</Text>
         {running.length > 0 && <Text color={CYAN} mono>{'▸ '}{running[running.length - 1]?.tool}</Text>}
-        {turn && <Text color={MUTED} mono>{'▸ '}{turn.seconds}s · {turn.tools} herr.</Text>}
+        {turn && <Text color={MUTED} mono>{'▸ '}{turn.seconds != null ? `${turn.seconds}s · ` : ''}{turn.tools} herr.</Text>}
         <Box flexGrow={1} />
         <Button key="neon-open" label="PANEL" onPress={() => $.ui.open({ id: PANE, title: 'NEON // GRID' })} />
         <Button key="neon-hide" label="OCULTAR" onPress={() => update($, isBandHidden, () => true)} />

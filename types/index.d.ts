@@ -1,5 +1,5 @@
 export type Call = { id: string; tool: string; isDone: boolean }
-export type Turn = { seconds: number; tools: number }
+export type Turn = { seconds: number | null; tools: number }
 
 declare module 'claude-code' {
   interface PluginState {
@@ -7,6 +7,7 @@ declare module 'claude-code' {
       calls: Shaped<Call[]>
       last: Turn | null
       turns: number
+      toolsTotal: number
       isBandHidden: boolean
     }
   }
